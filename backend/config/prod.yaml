@@ -1,0 +1,12 @@
+env: "prod"
+storage_url: "postgres://user:password@postgres:5432/multibank?sslmode=disable"
+http_server:
+  address: "0.0.0.0:8080"
+  timeout: 10s
+  idle_timeout: 120s
+  user: "admin"
+  password: "changeme"
+client_id: "prod_client_id"
+client_secret: "prod_client_secret"
+virtual_bank:
+  base_url: "https://vbank.open.bankingapi.ru"
