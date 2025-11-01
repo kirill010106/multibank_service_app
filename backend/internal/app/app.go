@@ -13,7 +13,11 @@ import (
 	"github.com/kirill010106/multibank_service_app/backend/internal/config"
 	"github.com/kirill010106/multibank_service_app/backend/internal/handlers"
 	"github.com/kirill010106/multibank_service_app/backend/internal/middleware"
+	"github.com/kirill010106/multibank_service_app/backend/internal/models"
+	"github.com/kirill010106/multibank_service_app/backend/internal/repository"
 	"github.com/kirill010106/multibank_service_app/backend/internal/services/auth"
+	"github.com/kirill010106/multibank_service_app/backend/internal/services/bank"
+	"github.com/kirill010106/multibank_service_app/backend/pkg/clients"
 	_ "github.com/lib/pq"
 	"github.com/rs/zerolog"
 )
@@ -27,6 +31,8 @@ type App struct {
 	authService *auth.Service
 	authHandler *handlers.AuthHandler
 	jwtManager  *auth.JWTManager
+	bankService *bank.Service
+	bankHandler *handlers.BankHandler
 }
 
 // New creates a new App instance with all dependencies initialized
@@ -157,12 +163,26 @@ func (a *App) initServices() {
 	// Auth Service
 	a.authService = auth.NewService(a.db, a.jwtManager)
 
+	// Bank clients (VBank only for now)
+	bankClients := map[models.BankProvider]clients.BankClient{
+		models.VBankProvider: clients.NewClient(
+			a.config.VirtualBank.BaseURL,
+			a.config.ClientID,
+			a.config.ClientSecret,
+			*a.log,
+		),
+	}
+
+	bankRepo := repository.NewBankConnectionRepository(a.db)
+	a.bankService = bank.NewService(bankRepo, bankClients, *a.log)
+
 	a.log.Info().Msg("services initialized")
 }
 
 // initHandlers initializes all HTTP handlers
 func (a *App) initHandlers() {
 	a.authHandler = handlers.NewAuthHandler(a.authService, *a.log)
+	a.bankHandler = handlers.NewBankHandler(a.bankService, *a.log)
 
 	a.log.Info().Msg("handlers initialized")
 }

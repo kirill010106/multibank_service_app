@@ -26,3 +26,12 @@ migrate-force:
 # Показать текущую версию
 migrate-version:
     migrate -path migrations -database "$(DATABASE_URL)" version
+
+# Swagger documentation
+.PHONY: swagger
+swagger:
+    swag init -g cmd/main.go -o docs
+
+.PHONY: swagger-fmt
+swagger-fmt:
+    swag fmt -g cmd/main.go

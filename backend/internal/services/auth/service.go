@@ -94,32 +94,43 @@ func (s *Service) Login(req *models.LoginRequest) (*models.AuthResponse, error) 
 
 	var user models.User
 
+	// Query user from database
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, email, password_hash, created_at, updated_at
-		FROM users
-		WHERE email = $1
-	`, req.Email).Scan(
+        SELECT id, email, password_hash, created_at, updated_at
+        FROM users
+        WHERE email = $1
+    `, req.Email).Scan(
 		&user.ID,
 		&user.Email,
 		&user.PasswordHash,
 		&user.CreatedAt,
 		&user.UpdatedAt,
 	)
+
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("%s: invalid credentials", op)
+			// Domain error - return without wrapping
+			// Handler will check with errors.Is()
+			return nil, models.ErrInvalidCredentials
 		}
-		return nil, fmt.Errorf("%s: failed to get user: %w", op, err)
+		// Real database error - wrap with context
+		return nil, fmt.Errorf("%s: database query failed: %w", op, err)
 	}
 
-	err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password))
+	// Verify password
+	err = bcrypt.CompareHashAndPassword(
+		[]byte(user.PasswordHash),
+		[]byte(req.Password),
+	)
 	if err != nil {
-		return nil, fmt.Errorf("%s: invalid credentials", op)
+		// Domain error - return without wrapping
+		return nil, models.ErrInvalidCredentials
 	}
 
+	// Generate JWT token
 	token, err := s.jwtManager.GenerateToken(user.ID, user.Email)
 	if err != nil {
-		return nil, fmt.Errorf("%s: failed to generate token: %w", op, err)
+		return nil, fmt.Errorf("%s: token generation failed: %w", op, err)
 	}
 
 	return &models.AuthResponse{
