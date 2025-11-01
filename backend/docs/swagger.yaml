@@ -1,0 +1,446 @@
+basePath: /api/v1
+definitions:
+  bank.ConnectBankResponse:
+    properties:
+      connection:
+        $ref: '#/definitions/models.BankConnection'
+      consent_id:
+        type: string
+      message:
+        type: string
+      status:
+        type: string
+    type: object
+  handlers.ConnectBankRequest:
+    properties:
+      bank_client_id:
+        type: string
+      bank_provider:
+        enum:
+        - vbank
+        - sbank
+        - abank
+        type: string
+    required:
+    - bank_client_id
+    - bank_provider
+    type: object
+  handlers.ErrorResponse:
+    properties:
+      error:
+        type: string
+      message:
+        type: string
+    type: object
+  handlers.LoginRequest:
+    properties:
+      email:
+        example: user@example.com
+        type: string
+      password:
+        example: password123
+        type: string
+    required:
+    - email
+    - password
+    type: object
+  handlers.LoginResponse:
+    properties:
+      token:
+        example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+        type: string
+      user:
+        $ref: '#/definitions/handlers.UserPayload'
+    type: object
+  handlers.RegisterRequest:
+    properties:
+      email:
+        example: user@example.com
+        type: string
+      password:
+        example: password123
+        minLength: 8
+        type: string
+    required:
+    - email
+    - password
+    type: object
+  handlers.RegisterResponse:
+    properties:
+      token:
+        example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+        type: string
+      user:
+        $ref: '#/definitions/handlers.UserPayload'
+    type: object
+  handlers.UserPayload:
+    properties:
+      client_id:
+        example: team200
+        type: string
+      email:
+        example: user@example.com
+        type: string
+      id:
+        example: 1
+        type: integer
+    type: object
+  models.Account:
+    properties:
+      account_id:
+        type: string
+      account_type:
+        type: string
+      bank_provider:
+        $ref: '#/definitions/models.BankProvider'
+      currency:
+        type: string
+      nickname:
+        type: string
+      servicer:
+        $ref: '#/definitions/models.Servicer'
+    type: object
+  models.BankConnection:
+    properties:
+      bank_client_id:
+        description: team-xxx-x
+        type: string
+      bank_provider:
+        $ref: '#/definitions/models.BankProvider'
+      consent_id:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: integer
+      status:
+        $ref: '#/definitions/models.ConnectionStatus'
+      token_expires_at:
+        type: string
+      updated_at:
+        type: string
+      user_id:
+        type: integer
+    type: object
+  models.BankDashboardInfo:
+    properties:
+      accounts:
+        items:
+          $ref: '#/definitions/models.Account'
+        type: array
+      accounts_count:
+        type: integer
+      error:
+        description: If failed to fetch
+        type: string
+      provider:
+        $ref: '#/definitions/models.BankProvider'
+      status:
+        type: string
+    type: object
+  models.BankProvider:
+    enum:
+    - vbank
+    - sbank
+    - abank
+    type: string
+    x-enum-varnames:
+    - VBankProvider
+    - SBankProvider
+    - ABankProvider
+  models.ConnectionStatus:
+    enum:
+    - pending
+    - active
+    - expired
+    - revoked
+    type: string
+    x-enum-varnames:
+    - ConnectionPending
+    - ConnectionActive
+    - ConnectionExpired
+    - ConnectionRevoked
+  models.DashboardResponse:
+    properties:
+      active_banks:
+        type: integer
+      banks:
+        items:
+          $ref: '#/definitions/models.BankDashboardInfo'
+        type: array
+      total_accounts:
+        type: integer
+      total_banks:
+        type: integer
+      user_id:
+        type: integer
+    type: object
+  models.Servicer:
+    properties:
+      identification:
+        type: string
+      scheme_name:
+        type: string
+    type: object
+host: localhost:8080
+info:
+  contact:
+    email: support@vtbmultibank.ru
+    name: API Support
+  description: Multibank aggregation service for VTB Hackathon
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+  termsOfService: http://swagger.io/terms/
+  title: VTB Multibank Service API
+  version: "1.0"
+paths:
+  /auth/login:
+    post:
+      consumes:
+      - application/json
+      description: Authenticate user and return JWT token
+      parameters:
+      - description: Login credentials
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.LoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Login successful
+          schema:
+            $ref: '#/definitions/handlers.LoginResponse'
+        "400":
+          description: Invalid request body
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Invalid credentials
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: User login
+      tags:
+      - auth
+  /auth/register:
+    post:
+      consumes:
+      - application/json
+      description: Create a new user account with email and password
+      parameters:
+      - description: Registration credentials
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.RegisterRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: User created successfully
+          schema:
+            $ref: '#/definitions/handlers.RegisterResponse'
+        "400":
+          description: Invalid request body or validation error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "409":
+          description: User already exists
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Register new user
+      tags:
+      - auth
+  /banks:
+    get:
+      description: Retrieve all bank connections for authenticated user
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: List of connections
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get user's bank connections
+      tags:
+      - banks
+  /banks/{provider}:
+    delete:
+      description: Remove bank connection for authenticated user
+      parameters:
+      - description: Bank provider
+        enum:
+        - vbank
+        - sbank
+        - abank
+        in: path
+        name: provider
+        required: true
+        type: string
+      responses:
+        "204":
+          description: Bank disconnected successfully
+        "400":
+          description: Invalid bank provider
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Disconnect bank
+      tags:
+      - banks
+  /banks/{provider}/accounts:
+    get:
+      description: Retrieve all accounts from specified bank provider
+      parameters:
+      - description: Bank provider
+        enum:
+        - vbank
+        - sbank
+        - abank
+        in: path
+        name: provider
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: List of accounts
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Invalid bank provider
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get bank accounts
+      tags:
+      - banks
+  /banks/connect:
+    post:
+      consumes:
+      - application/json
+      description: Create connection to a bank using bank client ID
+      parameters:
+      - description: Bank connection details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.ConnectBankRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Bank connected successfully
+          schema:
+            $ref: '#/definitions/bank.ConnectBankResponse'
+        "400":
+          description: Invalid request or validation error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Connect bank account
+      tags:
+      - banks
+  /dashboard:
+    get:
+      description: Retrieve aggregated data from all connected banks
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Dashboard data
+          schema:
+            $ref: '#/definitions/models.DashboardResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get dashboard data
+      tags:
+      - dashboard
+  /me:
+    get:
+      description: Get authenticated user information from JWT token
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: User info
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get current user info
+      tags:
+      - user
+securityDefinitions:
+  BearerAuth:
+    description: Type "Bearer" followed by a space and JWT token.
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

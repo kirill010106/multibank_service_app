@@ -1,0 +1,9 @@
+with-expecter: true
+packages:
+  github.com/kirill010106/multibank_service_app/backend/internal/database:
+    config:
+      dir: "internal/mocks"
+      outpkg: "mocks"
+    interfaces:
+      DBInterface:
+      RowScanner:
