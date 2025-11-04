@@ -1,0 +1,121 @@
+name: Deploy Backend to Render
+
+on:
+  push:
+    branches:
+      - backend-pages
+    paths:
+      - 'backend/**'
+      - '.github/workflows/deploy-backend.yml'
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./backend
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache-dependency-path: backend/go.sum
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Run tests
+        run: go test -v -race -coverprofile=coverage.out ./...
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./backend/coverage.out
+          flags: backend
+
+  build:
+    name: Build Binary
+    needs: test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./backend
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache-dependency-path: backend/go.sum
+
+      - name: Build
+        run: |
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o bin/server -ldflags="-s -w" cmd/main.go
+          ls -lh bin/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-binary
+          path: backend/bin/server
+
+  deploy:
+    name: Deploy to Timeweb Cloud
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/backend-pages'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download binary artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-binary
+          path: ./bin
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.TIMEWEB_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.TIMEWEB_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Create deployment package
+        run: |
+          mkdir -p deploy_package
+          cp bin/server deploy_package/
+          cp -r backend/config deploy_package/
+          cp backend/deploy/deploy.sh deploy_package/
+          cp backend/.env.example deploy_package/.env.example
+          chmod +x deploy_package/server
+          chmod +x deploy_package/deploy.sh
+
+      - name: Deploy to Timeweb Cloud
+        env:
+          HOST: ${{ secrets.TIMEWEB_HOST }}
+          USERNAME: ${{ secrets.TIMEWEB_USERNAME }}
+          APP_DIR: ${{ secrets.TIMEWEB_APP_DIR }}
+        run: |
+          # Upload files
+          echo "📤 Uploading files to server..."
+          scp -r deploy_package/* $USERNAME@$HOST:$APP_DIR/
+          
+          # Run deployment script
+          echo "🚀 Running deployment script..."
+          ssh $USERNAME@$HOST "cd $APP_DIR && sudo bash deploy.sh"
+
+      - name: Health check
+        run: |
+          sleep 10
+          curl -f https://${{ secrets.TIMEWEB_DOMAIN }}/health || exit 1
