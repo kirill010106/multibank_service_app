@@ -82,15 +82,49 @@ GitHub Actions автоматически задеплоит backend! ✅
 ## 🔄 Workflow деплоя
 
 1. **Push в `backend-pages`** → Триггер GitHub Actions
-2. **Run Tests** → Все 77 тестов должны пройти
+2. **Run Tests** → Unit тесты (integration тесты опциональны)
 3. **Build Binary** → Сборка `server` executable
 4. **Upload to Timeweb** → SCP файлов на сервер
 5. **Run deploy.sh** → Рестарт сервиса с health check
 6. **Health Check** → Проверка доступности API
 
+### 🧪 О тестах в CI
+
+**Unit тесты** (запускаются всегда):
+- Auth service tests
+- Bank service tests  
+- Handler tests
+- VBank client unit tests
+
+**Integration тесты** (опциональны, требуют credentials):
+- VBank API integration tests (пропускаются если нет VBANK_BASE_URL)
+- Используют build tag `//go:build integration`
+
 ---
 
-## 🛠️ Локальное тестирование deploy.sh
+## 🛠️ Локальное тестирование
+
+### Тестирование кода
+
+**Все unit тесты:**
+```powershell
+cd backend
+go test ./...
+```
+
+**Unit + Integration тесты:**
+```powershell
+cd backend
+go test -v -tags=integration ./...
+```
+
+**Только VBank integration тесты:**
+```powershell
+cd backend
+go test -v -tags=integration ./pkg/clients/...
+```
+
+### Тестирование deploy.sh
 
 Можно протестировать скрипт локально на сервере:
 

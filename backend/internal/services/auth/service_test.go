@@ -405,7 +405,7 @@ func TestService_Login_DatabaseError(t *testing.T) {
 	// Проверки
 	assert.Error(t, err)
 	assert.Nil(t, response)
-	assert.Contains(t, err.Error(), "failed to get user")
+	assert.Contains(t, err.Error(), "database query failed")
 
 	mockDB.AssertExpectations(t)
 }

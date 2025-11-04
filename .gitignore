@@ -1,3 +1,33 @@
+# Environment files
 /backend/.env
 /backend/.env.local
+/backend/.env.prod
 .env
+.env.local
+.env.prod
+
+# Binaries
+/backend/bin/
+/backend/tmp/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test files
+*.test
+*.out
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

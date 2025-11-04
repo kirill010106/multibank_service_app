@@ -1,3 +1,6 @@
+//go:build integration
+// +build integration
+
 package clients
 
 import (
@@ -14,7 +17,9 @@ import (
 
 // loadTestConfig loads .env and returns test credentials
 func loadTestConfig(t *testing.T) (baseURL, clientID, clientSecret string) {
-	// Load .env from backend root
+	t.Helper()
+
+	// Load .env from backend root (only works locally)
 	if err := godotenv.Load("../../.env"); err != nil {
 		t.Logf("Warning: .env not found, using environment variables")
 	}
@@ -23,9 +28,10 @@ func loadTestConfig(t *testing.T) (baseURL, clientID, clientSecret string) {
 	clientID = os.Getenv("CLIENT_ID")
 	clientSecret = os.Getenv("CLIENT_SECRET")
 
-	require.NotEmpty(t, baseURL, "VBANK_BASE_URL must be set")
-	require.NotEmpty(t, clientID, "CLIENT_ID must be set")
-	require.NotEmpty(t, clientSecret, "CLIENT_SECRET must be set")
+	// Skip test if credentials not available (instead of failing)
+	if baseURL == "" || clientID == "" || clientSecret == "" {
+		t.Skip("Skipping integration test: VBANK credentials not set (VBANK_BASE_URL, CLIENT_ID, CLIENT_SECRET required)")
+	}
 
 	return
 }
