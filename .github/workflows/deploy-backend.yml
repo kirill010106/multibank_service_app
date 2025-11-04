@@ -114,6 +114,15 @@ jobs:
           chmod +x deploy_package/server
           chmod +x deploy_package/deploy.sh
 
+      - name: Prepare server directory
+        env:
+          HOST: ${{ secrets.TIMEWEB_HOST }}
+          USERNAME: ${{ secrets.TIMEWEB_USERNAME }}
+          APP_DIR: ${{ secrets.TIMEWEB_APP_DIR }}
+        run: |
+          echo "📁 Preparing server directory..."
+          ssh $USERNAME@$HOST "mkdir -p $APP_DIR/{config,backups,logs} && chmod -R 755 $APP_DIR"
+
       - name: Deploy to Timeweb Cloud
         env:
           HOST: ${{ secrets.TIMEWEB_HOST }}
@@ -122,7 +131,14 @@ jobs:
         run: |
           # Upload files
           echo "📤 Uploading files to server..."
-          scp -r deploy_package/* $USERNAME@$HOST:$APP_DIR/
+          scp deploy_package/server $USERNAME@$HOST:$APP_DIR/
+          scp -r deploy_package/config $USERNAME@$HOST:$APP_DIR/
+          scp deploy_package/deploy.sh $USERNAME@$HOST:$APP_DIR/
+          scp deploy_package/.env.example $USERNAME@$HOST:$APP_DIR/
+          
+          # Set permissions
+          echo "🔐 Setting permissions..."
+          ssh $USERNAME@$HOST "chmod +x $APP_DIR/server $APP_DIR/deploy.sh"
           
           # Run deployment script (without sudo!)
           echo "🚀 Running deployment script..."
