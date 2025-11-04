@@ -128,7 +128,18 @@ jobs:
           echo "🚀 Running deployment script..."
           ssh $USERNAME@$HOST "cd $APP_DIR && bash deploy.sh"
 
-      - name: Health check
+      - name: Health check (internal)
+        env:
+          HOST: ${{ secrets.TIMEWEB_HOST }}
+          USERNAME: ${{ secrets.TIMEWEB_USERNAME }}
         run: |
-          sleep 10
-          curl -f https://${{ secrets.TIMEWEB_DOMAIN }}/health || exit 1
+          echo "🏥 Running health check on localhost:8080..."
+          sleep 5
+          ssh $USERNAME@$HOST "curl -f http://localhost:8080/health || exit 1"
+          echo "✅ Backend is healthy!"
+
+      # TODO: Uncomment after setting up Nginx + SSL + DNS
+      # - name: Health check (external HTTPS)
+      #   run: |
+      #     echo "🌐 Checking external endpoint..."
+      #     curl -f https://${{ secrets.TIMEWEB_DOMAIN }}/health || exit 1
