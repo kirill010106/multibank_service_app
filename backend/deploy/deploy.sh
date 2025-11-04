@@ -1,97 +1,115 @@
 #!/bin/bash
-# VTB Multibank Backend Deployment Script for Timeweb Cloud
-# Usage: ./deploy.sh
+set -euo pipefail
 
-set -e  # Exit on error
-
-# Configuration
-APP_DIR="/var/www/vtb-multibank"
-BACKUP_DIR="/var/www/vtb-multibank-backups"
-SERVICE_NAME="vtb-backend"
+APP_DIR="${APP_DIR:-/var/www/vtb-multibank}"
+APP_NAME="server"
+BACKUP_DIR="${APP_DIR}/backups"
+LOG_DIR="${APP_DIR}/logs"
+PID_FILE="${APP_DIR}/${APP_NAME}.pid"
 
 echo "🚀 Starting deployment..."
 
-# Create backup directory
-mkdir -p "$BACKUP_DIR"
+# Create necessary directories
+mkdir -p "$BACKUP_DIR" "$LOG_DIR"
 
-# Backup current version
-if [ -f "$APP_DIR/server" ]; then
-    echo "📦 Backing up current version..."
-    BACKUP_FILE="$BACKUP_DIR/server-$(date +%Y%m%d-%H%M%S)"
-    cp "$APP_DIR/server" "$BACKUP_FILE"
-    echo "✅ Backup saved: $BACKUP_FILE"
+# Backup current binary if exists
+if [ -f "${APP_DIR}/${APP_NAME}" ]; then
+    TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+    BACKUP_PATH="${BACKUP_DIR}/${APP_NAME}_${TIMESTAMP}"
+    
+    echo "📦 Backing up current version to ${BACKUP_PATH}"
+    cp "${APP_DIR}/${APP_NAME}" "${BACKUP_PATH}"
+    
+    # Keep only last 5 backups
+    ls -t "${BACKUP_DIR}/${APP_NAME}_"* 2>/dev/null | tail -n +6 | xargs rm -f 2>/dev/null || true
 fi
 
-# Stop service if using systemd
-if systemctl is-active --quiet $SERVICE_NAME; then
-    echo "⏸️  Stopping service..."
-    sudo systemctl stop $SERVICE_NAME
-else
-    # Fallback: kill process
-    echo "⏸️  Stopping process..."
-    pkill -f "$APP_DIR/server" || true
-fi
-
-# Wait for port to be free
-echo "⏳ Waiting for port 8080 to be free..."
-for i in {1..10}; do
-    if ! lsof -Pi :8080 -sTCP:LISTEN -t >/dev/null ; then
-        break
+# Stop existing process
+if [ -f "$PID_FILE" ]; then
+    OLD_PID=$(cat "$PID_FILE")
+    if kill -0 "$OLD_PID" 2>/dev/null; then
+        echo "🛑 Stopping process (PID: $OLD_PID)..."
+        kill "$OLD_PID"
+        
+        # Wait for process to stop
+        for i in {1..10}; do
+            if ! kill -0 "$OLD_PID" 2>/dev/null; then
+                break
+            fi
+            sleep 1
+        done
+        
+        # Force kill if still running
+        if kill -0 "$OLD_PID" 2>/dev/null; then
+            echo "⚠️  Force killing process..."
+            kill -9 "$OLD_PID" || true
+        fi
     fi
-    sleep 1
-done
-
-# Set permissions
-echo "🔐 Setting permissions..."
-chmod +x "$APP_DIR/server"
-chown -R www-data:www-data "$APP_DIR"
-
-# Create logs directory
-mkdir -p "$APP_DIR/logs"
-
-# Start service
-if [ -f "/etc/systemd/system/$SERVICE_NAME.service" ]; then
-    echo "▶️  Starting service with systemd..."
-    sudo systemctl start $SERVICE_NAME
-    sleep 3
-    sudo systemctl status $SERVICE_NAME --no-pager
-else
-    echo "▶️  Starting process with nohup..."
-    cd "$APP_DIR"
-    nohup ./server > logs/app.log 2>&1 &
-    echo $! > server.pid
+    rm -f "$PID_FILE"
 fi
+
+# Make new binary executable
+chmod +x "${APP_DIR}/${APP_NAME}"
+
+# Load environment variables
+if [ -f "${APP_DIR}/.env" ]; then
+    set -a
+    source "${APP_DIR}/.env"
+    set +a
+else
+    echo "⚠️  Warning: .env file not found"
+fi
+
+# Start new process with nohup
+echo "▶️  Starting new process..."
+cd "$APP_DIR"
+
+nohup ./${APP_NAME} > "${LOG_DIR}/app.log" 2>&1 &
+NEW_PID=$!
+echo $NEW_PID > "$PID_FILE"
+
+echo "✅ Process started (PID: $NEW_PID)"
 
 # Health check
 echo "🏥 Running health check..."
-sleep 5
+sleep 3
 
-for i in {1..10}; do
-    if curl -f http://localhost:8080/health >/dev/null 2>&1; then
+MAX_RETRIES=10
+for i in $(seq 1 $MAX_RETRIES); do
+    if curl -f http://localhost:8080/health > /dev/null 2>&1; then
         echo "✅ Health check passed!"
-        echo "🎉 Deployment successful!"
+        echo "🎉 Deployment completed successfully!"
         exit 0
     fi
-    echo "⏳ Waiting for server to start... ($i/10)"
+    
+    echo "⏳ Waiting for server to start (attempt $i/$MAX_RETRIES)..."
     sleep 2
 done
 
+# Health check failed - rollback
 echo "❌ Health check failed!"
-echo "📋 Last 20 lines of logs:"
-tail -n 20 "$APP_DIR/logs/app.log"
 
-# Rollback
-if [ -n "$BACKUP_FILE" ]; then
+if [ -f "$PID_FILE" ]; then
+    FAILED_PID=$(cat "$PID_FILE")
+    kill "$FAILED_PID" 2>/dev/null || true
+    rm -f "$PID_FILE"
+fi
+
+if [ -f "${BACKUP_PATH}" ]; then
     echo "🔄 Rolling back to previous version..."
-    cp "$BACKUP_FILE" "$APP_DIR/server"
-    chmod +x "$APP_DIR/server"
+    cp "${BACKUP_PATH}" "${APP_DIR}/${APP_NAME}"
+    chmod +x "${APP_DIR}/${APP_NAME}"
     
-    if [ -f "/etc/systemd/system/$SERVICE_NAME.service" ]; then
-        sudo systemctl start $SERVICE_NAME
-    else
-        cd "$APP_DIR"
-        nohup ./server > logs/app.log 2>&1 &
+    nohup ./${APP_NAME} > "${LOG_DIR}/app.log" 2>&1 &
+    ROLLBACK_PID=$!
+    echo $ROLLBACK_PID > "$PID_FILE"
+    
+    sleep 3
+    if curl -f http://localhost:8080/health > /dev/null 2>&1; then
+        echo "✅ Rollback successful"
+        exit 1
     fi
 fi
 
+echo "❌ Rollback failed"
 exit 1
