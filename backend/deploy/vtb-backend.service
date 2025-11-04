@@ -1,0 +1,39 @@
+# VTB Multibank Backend Systemd Service
+# Installation: sudo cp vtb-backend.service /etc/systemd/system/
+# Enable: sudo systemctl enable vtb-backend
+# Start: sudo systemctl start vtb-backend
+
+[Unit]
+Description=VTB Multibank Backend API
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/vtb-multibank
+ExecStart=/var/www/vtb-multibank/server
+Restart=on-failure
+RestartSec=10
+StandardOutput=append:/var/www/vtb-multibank/logs/app.log
+StandardError=append:/var/www/vtb-multibank/logs/error.log
+
+# Environment variables (or use EnvironmentFile)
+Environment="CONFIG_PATH=config/prod.yaml"
+Environment="LOG_LEVEL=2"
+Environment="LOG_FORMAT=json"
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/www/vtb-multibank/logs
+
+# Resource limits
+LimitNOFILE=65535
+LimitNPROC=4096
+
+[Install]
+WantedBy=multi-user.target
