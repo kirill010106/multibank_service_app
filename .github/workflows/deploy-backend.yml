@@ -110,6 +110,7 @@ jobs:
           cp -r backend/config deploy_package/
           cp backend/deploy/deploy.sh deploy_package/
           cp backend/.env.example deploy_package/.env.example
+          # Note: migrations are embedded in binary (internal/app/migrations/)
           chmod +x deploy_package/server
           chmod +x deploy_package/deploy.sh
 

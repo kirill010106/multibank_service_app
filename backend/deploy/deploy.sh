@@ -100,6 +100,7 @@ if [ -f "${BACKUP_PATH}" ]; then
     cp "${BACKUP_PATH}" "${APP_DIR}/${APP_NAME}"
     chmod +x "${APP_DIR}/${APP_NAME}"
     
+    cd "$APP_DIR"
     nohup ./${APP_NAME} > "${LOG_DIR}/app.log" 2>&1 &
     ROLLBACK_PID=$!
     echo $ROLLBACK_PID > "$PID_FILE"

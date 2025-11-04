@@ -114,24 +114,36 @@ func (a *App) initDB() error {
 	return nil
 }
 
-// runMigrations applies database migrations
+// runMigrations applies database migrations from embedded files
 func (a *App) runMigrations() error {
 	const op = "app.runMigrations"
 
-	driver, err := postgres.WithInstance(a.db, &postgres.Config{})
+	a.log.Info().
+		Str("op", op).
+		Msg("running database migrations from embedded files")
+
+	// Get embedded migrations source
+	sourceDriver, err := getEmbeddedMigrations()
 	if err != nil {
 		a.log.Error().
 			Err(err).
 			Str("op", op).
-			Msg("failed to create migrate driver")
+			Msg("failed to load embedded migrations")
 		return err
 	}
 
-	m, err := migrate.NewWithDatabaseInstance(
-		"file://migrations",
-		"postgres",
-		driver,
-	)
+	// Get database driver
+	dbDriver, err := postgres.WithInstance(a.db, &postgres.Config{})
+	if err != nil {
+		a.log.Error().
+			Err(err).
+			Str("op", op).
+			Msg("failed to create postgres driver")
+		return err
+	}
+
+	// Create migrate instance with both drivers
+	m, err := migrate.NewWithInstance("iofs", sourceDriver, "postgres", dbDriver)
 	if err != nil {
 		a.log.Error().
 			Err(err).
@@ -148,7 +160,9 @@ func (a *App) runMigrations() error {
 		return err
 	}
 
-	a.log.Info().Msg("migrations applied successfully")
+	a.log.Info().
+		Str("op", op).
+		Msg("migrations completed successfully")
 	return nil
 }
 
