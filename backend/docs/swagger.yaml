@@ -187,7 +187,8 @@ info:
   contact:
     email: support@vtbmultibank.ru
     name: API Support
-  description: Multibank aggregation service for VTB Hackathon
+  description: Multibank aggregation service for VTB Hackathon. Use /auth/register
+    or /auth/login to get JWT token, then click "Authorize" button and paste token.
   license:
     name: MIT
     url: https://opensource.org/licenses/MIT
@@ -439,7 +440,7 @@ paths:
       - user
 securityDefinitions:
   BearerAuth:
-    description: Type "Bearer" followed by a space and JWT token.
+    description: 'Enter your JWT token in the format: Bearer {token}'
     in: header
     name: Authorization
     type: apiKey

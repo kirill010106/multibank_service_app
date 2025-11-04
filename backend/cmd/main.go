@@ -1,6 +1,6 @@
 // @title           VTB Multibank Service API
 // @version         1.0
-// @description     Multibank aggregation service for VTB Hackathon
+// @description     Multibank aggregation service for VTB Hackathon. Use /auth/register or /auth/login to get JWT token, then click "Authorize" button and paste token.
 // @termsOfService  http://swagger.io/terms/
 
 // @contact.name   API Support
@@ -15,7 +15,7 @@
 // @securityDefinitions.apikey BearerAuth
 // @in header
 // @name Authorization
-// @description Type "Bearer" followed by a space and JWT token.
+// @description Enter your JWT token in the format: Bearer {token}
 package main
 
 import (

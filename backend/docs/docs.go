@@ -671,7 +671,7 @@ const docTemplate = `{
     },
     "securityDefinitions": {
         "BearerAuth": {
-            "description": "Type \"Bearer\" followed by a space and JWT token.",
+            "description": "Enter your JWT token in the format: Bearer {token}",
             "type": "apiKey",
             "name": "Authorization",
             "in": "header"
@@ -686,7 +686,7 @@ var SwaggerInfo = &swag.Spec{
 	BasePath:         "/api/v1",
 	Schemes:          []string{},
 	Title:            "VTB Multibank Service API",
-	Description:      "Multibank aggregation service for VTB Hackathon",
+	Description:      "Multibank aggregation service for VTB Hackathon. Use /auth/register or /auth/login to get JWT token, then click \"Authorize\" button and paste token.",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",
