@@ -123,9 +123,9 @@ jobs:
           echo "📤 Uploading files to server..."
           scp -r deploy_package/* $USERNAME@$HOST:$APP_DIR/
           
-          # Run deployment script
+          # Run deployment script (without sudo!)
           echo "🚀 Running deployment script..."
-          ssh $USERNAME@$HOST "cd $APP_DIR && sudo bash deploy.sh"
+          ssh $USERNAME@$HOST "cd $APP_DIR && bash deploy.sh"
 
       - name: Health check
         run: |
