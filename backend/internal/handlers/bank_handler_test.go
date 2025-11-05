@@ -45,6 +45,22 @@ func (m *MockBankService) GetAccounts(ctx context.Context, req *bank.GetAccounts
 	return args.Get(0).([]*models.Account), args.Error(1)
 }
 
+func (m *MockBankService) GetBalances(ctx context.Context, req *bank.GetBalancesRequest) ([]*models.Balance, error) {
+	args := m.Called(ctx, req)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*models.Balance), args.Error(1)
+}
+
+func (m *MockBankService) GetTransactions(ctx context.Context, req *bank.GetTransactionsRequest) ([]*models.Transaction, error) {
+	args := m.Called(ctx, req)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*models.Transaction), args.Error(1)
+}
+
 func (m *MockBankService) DisconnectBank(ctx context.Context, userID int, provider models.BankProvider) error {
 	args := m.Called(ctx, userID, provider)
 	return args.Error(0)
@@ -507,6 +523,134 @@ func TestBankHandler_DisconnectBank(t *testing.T) {
 		var result ErrorResponse
 		json.NewDecoder(resp.Body).Decode(&result)
 		assert.Contains(t, result.Message, "Failed to disconnect bank")
+		mockService.AssertExpectations(t)
+	})
+}
+
+func TestBankHandler_GetBalances(t *testing.T) {
+	log := zerolog.Nop()
+
+	t.Run("successful fetch", func(t *testing.T) {
+		mockService := new(MockBankService)
+
+		balances := []*models.Balance{
+			{AccountID: "acc-123", Amount: 10000.50, Currency: "RUB", Type: "InterimAvailable"},
+			{AccountID: "acc-123", Amount: 10000.50, Currency: "RUB", Type: "InterimBooked"},
+		}
+
+		mockService.On("GetBalances", mock.Anything, &bank.GetBalancesRequest{
+			UserID:       1,
+			BankProvider: models.VBankProvider,
+			AccountID:    "acc-123",
+		}).Return(balances, nil)
+
+		handler := &BankHandler{
+			bankService: mockService,
+			log:         log,
+		}
+
+		app := setupTestApp(handler)
+		app.Get("/api/v1/banks/:provider/accounts/:accountId/balances", handler.GetBalances)
+
+		req := httptest.NewRequest("GET", "/api/v1/banks/vbank/accounts/acc-123/balances", nil)
+		resp, err := app.Test(req)
+
+		assert.NoError(t, err)
+		assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+		var result map[string]interface{}
+		json.NewDecoder(resp.Body).Decode(&result)
+
+		assert.Equal(t, "vbank", result["bank_provider"])
+		assert.Equal(t, "acc-123", result["account_id"])
+		assert.Equal(t, float64(2), result["count"])
+		mockService.AssertExpectations(t)
+	})
+
+	t.Run("missing provider", func(t *testing.T) {
+		mockService := new(MockBankService)
+
+		handler := &BankHandler{
+			bankService: mockService,
+			log:         log,
+		}
+
+		app := setupTestApp(handler)
+		app.Get("/api/v1/banks/:provider/accounts/:accountId/balances", handler.GetBalances)
+
+		req := httptest.NewRequest("GET", "/api/v1/banks//accounts/acc-123/balances", nil)
+		resp, err := app.Test(req)
+
+		assert.NoError(t, err)
+		assert.Equal(t, fiber.StatusNotFound, resp.StatusCode) // Fiber returns 404 for empty params
+	})
+
+	t.Run("missing account ID", func(t *testing.T) {
+		mockService := new(MockBankService)
+
+		handler := &BankHandler{
+			bankService: mockService,
+			log:         log,
+		}
+
+		app := setupTestApp(handler)
+		app.Get("/api/v1/banks/:provider/accounts/:accountId/balances", handler.GetBalances)
+
+		req := httptest.NewRequest("GET", "/api/v1/banks/vbank/accounts//balances", nil)
+		resp, err := app.Test(req)
+
+		assert.NoError(t, err)
+		assert.Equal(t, fiber.StatusNotFound, resp.StatusCode) // Fiber returns 404 for empty params
+	})
+
+	t.Run("invalid provider", func(t *testing.T) {
+		mockService := new(MockBankService)
+
+		handler := &BankHandler{
+			bankService: mockService,
+			log:         log,
+		}
+
+		app := setupTestApp(handler)
+		app.Get("/api/v1/banks/:provider/accounts/:accountId/balances", handler.GetBalances)
+
+		req := httptest.NewRequest("GET", "/api/v1/banks/invalidbank/accounts/acc-123/balances", nil)
+		resp, err := app.Test(req)
+
+		assert.NoError(t, err)
+		assert.Equal(t, fiber.StatusBadRequest, resp.StatusCode)
+
+		var result ErrorResponse
+		json.NewDecoder(resp.Body).Decode(&result)
+		assert.Contains(t, result.Message, "Unsupported bank provider")
+	})
+
+	t.Run("service error", func(t *testing.T) {
+		mockService := new(MockBankService)
+
+		mockService.On("GetBalances", mock.Anything, &bank.GetBalancesRequest{
+			UserID:       1,
+			BankProvider: models.VBankProvider,
+			AccountID:    "acc-123",
+		}).Return(nil, errors.New("bank API unavailable"))
+
+		handler := &BankHandler{
+			bankService: mockService,
+			log:         log,
+		}
+
+		app := setupTestApp(handler)
+		app.Get("/api/v1/banks/:provider/accounts/:accountId/balances", handler.GetBalances)
+
+		req := httptest.NewRequest("GET", "/api/v1/banks/vbank/accounts/acc-123/balances", nil)
+		resp, err := app.Test(req)
+
+		assert.NoError(t, err)
+		assert.Equal(t, fiber.StatusInternalServerError, resp.StatusCode)
+
+		var result ErrorResponse
+		json.NewDecoder(resp.Body).Decode(&result)
+		assert.Contains(t, result.Message, "Failed to fetch balances")
 		mockService.AssertExpectations(t)
 	})
 }

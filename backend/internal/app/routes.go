@@ -181,10 +181,12 @@ func (a *App) setupBankRoutes() {
 	bankGroup.Use(a.GetJWTMiddleware())
 
 	// Bank endpoints
-	bankGroup.Post("/connect", a.bankHandler.ConnectBank)           // POST /api/v1/banks/connect
-	bankGroup.Get("/", a.bankHandler.GetConnections)                // GET /api/v1/banks
-	bankGroup.Get("/:provider/accounts", a.bankHandler.GetAccounts) // GET /api/v1/banks/:provider/accounts
-	bankGroup.Delete("/:provider", a.bankHandler.DisconnectBank)    // DELETE /api/v1/banks/:provider
+	bankGroup.Post("/connect", a.bankHandler.ConnectBank)                                       // POST /api/v1/banks/connect
+	bankGroup.Get("/", a.bankHandler.GetConnections)                                            // GET /api/v1/banks
+	bankGroup.Get("/:provider/accounts", a.bankHandler.GetAccounts)                             // GET /api/v1/banks/:provider/accounts
+	bankGroup.Get("/:provider/accounts/:accountId/balances", a.bankHandler.GetBalances)         // GET /api/v1/banks/:provider/accounts/:accountId/balances
+	bankGroup.Get("/:provider/accounts/:accountId/transactions", a.bankHandler.GetTransactions) // GET /api/v1/banks/:provider/accounts/:accountId/transactions
+	bankGroup.Delete("/:provider", a.bankHandler.DisconnectBank)                                // DELETE /api/v1/banks/:provider
 
 	a.log.Info().Msg("bank routes configured")
 }

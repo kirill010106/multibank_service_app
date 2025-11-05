@@ -13,5 +13,9 @@ type BankClient interface {
 
 	GetAccounts(ctx context.Context, bankToken, bankClientID, consentID string) ([]*models.Account, error)
 
+	GetBalances(ctx context.Context, bankToken, bankClientID, consentID, accountID string) ([]*models.Balance, error)
+
+	GetTransactions(ctx context.Context, bankToken, bankClientID, consentID, accountID string) ([]*models.Transaction, error)
+
 	GetBankProvider() models.BankProvider
 }

@@ -15,6 +15,8 @@ type BankServiceInterface interface {
 	ConnectBank(ctx context.Context, req *bank.ConnectBankRequest) (*bank.ConnectBankResponse, error)
 	GetConnections(ctx context.Context, userID int) ([]*models.BankConnection, error)
 	GetAccounts(ctx context.Context, req *bank.GetAccountsRequest) ([]*models.Account, error)
+	GetBalances(ctx context.Context, req *bank.GetBalancesRequest) ([]*models.Balance, error)
+	GetTransactions(ctx context.Context, req *bank.GetTransactionsRequest) ([]*models.Transaction, error)
 	DisconnectBank(ctx context.Context, userID int, provider models.BankProvider) error
 	GetDashboard(ctx context.Context, userID int) (*models.DashboardResponse, error)
 }
@@ -260,4 +262,140 @@ func (h *BankHandler) DisconnectBank(c *fiber.Ctx) error {
 
 	// 204 No Content - успешное удаление без body
 	return c.SendStatus(fiber.StatusNoContent)
+}
+
+// GetBalances godoc
+// @Summary      Get account balances
+// @Description  Retrieve balances for a specific account from a connected bank
+// @Tags         banks
+// @Security     BearerAuth
+// @Param        provider path string true "Bank provider" Enums(vbank, sbank, abank)
+// @Param        accountId path string true "Account ID"
+// @Produce      json
+// @Success      200 {object} object{bank_provider=string,account_id=string,balances=[]models.Balance,count=int}
+// @Failure      400 {object} ErrorResponse "Invalid parameters"
+// @Failure      401 {object} ErrorResponse "Unauthorized"
+// @Failure      500 {object} ErrorResponse "Internal server error"
+// @Router       /banks/{provider}/accounts/{accountId}/balances [get]
+func (h *BankHandler) GetBalances(c *fiber.Ctx) error {
+	const op = "handlers.BankHandler.GetBalances"
+
+	userID, err := h.getUserID(c)
+	if err != nil {
+		return err
+	}
+
+	providerStr := c.Params("provider")
+	if providerStr == "" {
+		return h.sendError(c, fiber.StatusBadRequest,
+			fiber.NewError(fiber.StatusBadRequest, "missing provider"),
+			"bank provider is required")
+	}
+
+	accountID := c.Params("accountId")
+	if accountID == "" {
+		return h.sendError(c, fiber.StatusBadRequest,
+			fiber.NewError(fiber.StatusBadRequest, "missing account ID"),
+			"account ID is required")
+	}
+
+	provider := models.BankProvider(providerStr)
+	if provider != models.VBankProvider && provider != models.SBankProvider && provider != models.ABankProvider {
+		return h.sendError(c, fiber.StatusBadRequest,
+			fiber.NewError(fiber.StatusBadRequest, "invalid provider"),
+			"Unsupported bank provider")
+	}
+
+	balances, err := h.bankService.GetBalances(c.Context(), &bank.GetBalancesRequest{
+		UserID:       userID,
+		BankProvider: provider,
+		AccountID:    accountID,
+	})
+
+	if err != nil {
+		return h.sendError(c, fiber.StatusInternalServerError, err, "Failed to fetch balances")
+	}
+
+	h.log.Info().
+		Str("op", op).
+		Int("user_id", userID).
+		Str("bank_provider", providerStr).
+		Str("account_id", accountID).
+		Int("balances_count", len(balances)).
+		Msg("balances fetched")
+
+	return c.JSON(fiber.Map{
+		"bank_provider": providerStr,
+		"account_id":    accountID,
+		"balances":      balances,
+		"count":         len(balances),
+	})
+}
+
+// GetTransactions godoc
+// @Summary      Get account transactions
+// @Description  Retrieve transaction history for a specific account from a connected bank
+// @Tags         banks
+// @Security     BearerAuth
+// @Param        provider path string true "Bank provider" Enums(vbank, sbank, abank)
+// @Param        accountId path string true "Account ID"
+// @Produce      json
+// @Success      200 {object} object{bank_provider=string,account_id=string,transactions=[]models.Transaction,count=int}
+// @Failure      400 {object} ErrorResponse "Invalid parameters"
+// @Failure      401 {object} ErrorResponse "Unauthorized"
+// @Failure      500 {object} ErrorResponse "Internal server error"
+// @Router       /banks/{provider}/accounts/{accountId}/transactions [get]
+func (h *BankHandler) GetTransactions(c *fiber.Ctx) error {
+	const op = "handlers.BankHandler.GetTransactions"
+
+	userID, err := h.getUserID(c)
+	if err != nil {
+		return err
+	}
+
+	providerStr := c.Params("provider")
+	if providerStr == "" {
+		return h.sendError(c, fiber.StatusBadRequest,
+			fiber.NewError(fiber.StatusBadRequest, "missing provider"),
+			"bank provider is required")
+	}
+
+	accountID := c.Params("accountId")
+	if accountID == "" {
+		return h.sendError(c, fiber.StatusBadRequest,
+			fiber.NewError(fiber.StatusBadRequest, "missing account ID"),
+			"account ID is required")
+	}
+
+	provider := models.BankProvider(providerStr)
+	if provider != models.VBankProvider && provider != models.SBankProvider && provider != models.ABankProvider {
+		return h.sendError(c, fiber.StatusBadRequest,
+			fiber.NewError(fiber.StatusBadRequest, "invalid provider"),
+			"Unsupported bank provider")
+	}
+
+	transactions, err := h.bankService.GetTransactions(c.Context(), &bank.GetTransactionsRequest{
+		UserID:       userID,
+		BankProvider: provider,
+		AccountID:    accountID,
+	})
+
+	if err != nil {
+		return h.sendError(c, fiber.StatusInternalServerError, err, "Failed to fetch transactions")
+	}
+
+	h.log.Info().
+		Str("op", op).
+		Int("user_id", userID).
+		Str("bank_provider", providerStr).
+		Str("account_id", accountID).
+		Int("transactions_count", len(transactions)).
+		Msg("transactions fetched")
+
+	return c.JSON(fiber.Map{
+		"bank_provider": providerStr,
+		"account_id":    accountID,
+		"transactions":  transactions,
+		"count":         len(transactions),
+	})
 }

@@ -417,3 +417,165 @@ func (s *Service) fetchBankAccounts(ctx context.Context, conn *models.BankConnec
 
 	return bankInfo
 }
+
+type GetBalancesRequest struct {
+	UserID       int                 `json:"user_id" validate:"required"`
+	BankProvider models.BankProvider `json:"bank_provider" validate:"required"`
+	AccountID    string              `json:"account_id" validate:"required"`
+}
+
+// GetBalances fetches balances for a specific account
+// Steps:
+// 1. Find active connection
+// 2. Check if token is expired (refresh if needed)
+// 3. Fetch balances from bank API
+func (s *Service) GetBalances(ctx context.Context, req *GetBalancesRequest) ([]*models.Balance, error) {
+	const op = "bank.Service.GetBalances"
+
+	s.log.Debug().
+		Str("op", op).
+		Int("user_id", req.UserID).
+		Str("bank_provider", string(req.BankProvider)).
+		Str("account_id", req.AccountID).
+		Msg("fetching account balances")
+
+	// Step 1: Find active connection
+	connection, err := s.connRepo.FindByUserAndBank(ctx, req.UserID, req.BankProvider)
+	if err != nil {
+		s.log.Error().Err(err).Str("op", op).Msg("connection not found")
+		return nil, fmt.Errorf("%s: connection not found: %w", op, err)
+	}
+
+	if connection.Status != models.ConnectionActive {
+		return nil, fmt.Errorf("%s: connection is not active (status: %s)", op, connection.Status)
+	}
+
+	// Step 2: Check if token is expired (refresh if needed)
+	if connection.TokenExpiresAt != nil && time.Now().After(*connection.TokenExpiresAt) {
+		s.log.Warn().
+			Str("op", op).
+			Int("connection_id", connection.ID).
+			Msg("access token expired, refreshing")
+
+		if err := s.refreshToken(ctx, connection); err != nil {
+			s.log.Error().Err(err).Str("op", op).Msg("failed to refresh access token")
+			return nil, fmt.Errorf("%s: failed to refresh access token: %w", op, err)
+		}
+	}
+
+	// Step 3: Get bank client
+	bankClient, ok := s.bankClients[req.BankProvider]
+	if !ok {
+		return nil, fmt.Errorf("%s: unsupported bank provider %s", op, req.BankProvider)
+	}
+
+	if connection.AccessToken == nil {
+		return nil, fmt.Errorf("%s: missing access token", op)
+	}
+	if connection.ConsentID == nil {
+		return nil, fmt.Errorf("%s: missing consent ID", op)
+	}
+
+	// Step 4: Fetch balances from bank API
+	balances, err := bankClient.GetBalances(ctx,
+		*connection.AccessToken,
+		connection.BankClientID,
+		*connection.ConsentID,
+		req.AccountID,
+	)
+	if err != nil {
+		s.log.Error().Err(err).Str("op", op).Msg("failed to fetch balances from bank API")
+		return nil, fmt.Errorf("%s: failed to fetch balances: %w", op, err)
+	}
+
+	s.log.Info().
+		Str("op", op).
+		Int("user_id", req.UserID).
+		Str("bank_provider", string(req.BankProvider)).
+		Str("account_id", req.AccountID).
+		Int("balances_count", len(balances)).
+		Msg("account balances fetched successfully")
+
+	return balances, nil
+}
+
+type GetTransactionsRequest struct {
+	UserID       int                 `json:"user_id" validate:"required"`
+	BankProvider models.BankProvider `json:"bank_provider" validate:"required"`
+	AccountID    string              `json:"account_id" validate:"required"`
+}
+
+// GetTransactions fetches transactions for a specific account
+// Steps:
+// 1. Find active connection
+// 2. Check if token is expired (refresh if needed)
+// 3. Fetch transactions from bank API
+func (s *Service) GetTransactions(ctx context.Context, req *GetTransactionsRequest) ([]*models.Transaction, error) {
+	const op = "bank.Service.GetTransactions"
+
+	s.log.Debug().
+		Str("op", op).
+		Int("user_id", req.UserID).
+		Str("bank_provider", string(req.BankProvider)).
+		Str("account_id", req.AccountID).
+		Msg("fetching account transactions")
+
+	// Step 1: Find active connection
+	connection, err := s.connRepo.FindByUserAndBank(ctx, req.UserID, req.BankProvider)
+	if err != nil {
+		s.log.Error().Err(err).Str("op", op).Msg("connection not found")
+		return nil, fmt.Errorf("%s: connection not found: %w", op, err)
+	}
+
+	if connection.Status != models.ConnectionActive {
+		return nil, fmt.Errorf("%s: connection is not active (status: %s)", op, connection.Status)
+	}
+
+	// Step 2: Check if token is expired (refresh if needed)
+	if connection.TokenExpiresAt != nil && time.Now().After(*connection.TokenExpiresAt) {
+		s.log.Warn().
+			Str("op", op).
+			Int("connection_id", connection.ID).
+			Msg("access token expired, refreshing")
+
+		if err := s.refreshToken(ctx, connection); err != nil {
+			s.log.Error().Err(err).Str("op", op).Msg("failed to refresh access token")
+			return nil, fmt.Errorf("%s: failed to refresh access token: %w", op, err)
+		}
+	}
+
+	// Step 3: Get bank client
+	bankClient, ok := s.bankClients[req.BankProvider]
+	if !ok {
+		return nil, fmt.Errorf("%s: unsupported bank provider %s", op, req.BankProvider)
+	}
+
+	if connection.AccessToken == nil {
+		return nil, fmt.Errorf("%s: missing access token", op)
+	}
+	if connection.ConsentID == nil {
+		return nil, fmt.Errorf("%s: missing consent ID", op)
+	}
+
+	// Step 4: Fetch transactions from bank API
+	transactions, err := bankClient.GetTransactions(ctx,
+		*connection.AccessToken,
+		connection.BankClientID,
+		*connection.ConsentID,
+		req.AccountID,
+	)
+	if err != nil {
+		s.log.Error().Err(err).Str("op", op).Msg("failed to fetch transactions from bank API")
+		return nil, fmt.Errorf("%s: failed to fetch transactions: %w", op, err)
+	}
+
+	s.log.Info().
+		Str("op", op).
+		Int("user_id", req.UserID).
+		Str("bank_provider", string(req.BankProvider)).
+		Str("account_id", req.AccountID).
+		Int("transactions_count", len(transactions)).
+		Msg("account transactions fetched successfully")
+
+	return transactions, nil
+}

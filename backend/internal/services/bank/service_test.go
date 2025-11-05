@@ -3,6 +3,7 @@ package bank
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -88,6 +89,22 @@ func (m *MockBankClient) GetAccounts(ctx context.Context, bankToken, bankClientI
 		return nil, args.Error(1)
 	}
 	return args.Get(0).([]*models.Account), args.Error(1)
+}
+
+func (m *MockBankClient) GetBalances(ctx context.Context, bankToken, bankClientID, consentID, accountID string) ([]*models.Balance, error) {
+	args := m.Called(ctx, bankToken, bankClientID, consentID, accountID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*models.Balance), args.Error(1)
+}
+
+func (m *MockBankClient) GetTransactions(ctx context.Context, bankToken, bankClientID, consentID, accountID string) ([]*models.Transaction, error) {
+	args := m.Called(ctx, bankToken, bankClientID, consentID, accountID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*models.Transaction), args.Error(1)
 }
 
 func (m *MockBankClient) GetBankProvider() models.BankProvider {
@@ -1164,4 +1181,213 @@ func TestService_GetDashboard(t *testing.T) {
 		mockRepo.AssertExpectations(t)
 		mockVBankClient.AssertExpectations(t)
 	})
+}
+
+// Test GetBalances
+func TestService_GetBalances(t *testing.T) {
+	log := zerolog.Nop()
+	ctx := context.Background()
+
+	tests := []struct {
+		name          string
+		request       *GetBalancesRequest
+		mockSetup     func(*MockBankConnectionRepository, *MockBankClient)
+		expectedError bool
+		validate      func(*testing.T, []*models.Balance)
+	}{
+		{
+			name: "successful fetch",
+			request: &GetBalancesRequest{
+				UserID:       1,
+				BankProvider: models.VBankProvider,
+				AccountID:    "acc-123",
+			},
+			mockSetup: func(repo *MockBankConnectionRepository, client *MockBankClient) {
+				token := "valid-token"
+				consentID := "consent-123"
+				expiresAt := time.Now().Add(1 * time.Hour)
+
+				connection := &models.BankConnection{
+					ID:             1,
+					UserID:         1,
+					BankProvider:   models.VBankProvider,
+					BankClientID:   "team069-1",
+					AccessToken:    &token,
+					ConsentID:      &consentID,
+					TokenExpiresAt: &expiresAt,
+					Status:         models.ConnectionActive,
+				}
+
+				repo.On("FindByUserAndBank", ctx, 1, models.VBankProvider).Return(connection, nil)
+
+				balances := []*models.Balance{
+					{AccountID: "acc-123", Amount: 10000.50, Currency: "RUB", Type: "InterimAvailable"},
+					{AccountID: "acc-123", Amount: 10000.50, Currency: "RUB", Type: "InterimBooked"},
+				}
+				client.On("GetBalances", ctx, token, "team069-1", consentID, "acc-123").Return(balances, nil)
+			},
+			expectedError: false,
+			validate: func(t *testing.T, balances []*models.Balance) {
+				assert.Len(t, balances, 2)
+				assert.Equal(t, "acc-123", balances[0].AccountID)
+				assert.Equal(t, 10000.50, balances[0].Amount)
+				assert.Equal(t, "RUB", balances[0].Currency)
+			},
+		},
+		{
+			name: "connection not found",
+			request: &GetBalancesRequest{
+				UserID:       1,
+				BankProvider: models.VBankProvider,
+				AccountID:    "acc-123",
+			},
+			mockSetup: func(repo *MockBankConnectionRepository, client *MockBankClient) {
+				repo.On("FindByUserAndBank", ctx, 1, models.VBankProvider).Return(nil, fmt.Errorf("not found"))
+			},
+			expectedError: true,
+		},
+		{
+			name: "connection not active",
+			request: &GetBalancesRequest{
+				UserID:       1,
+				BankProvider: models.VBankProvider,
+				AccountID:    "acc-123",
+			},
+			mockSetup: func(repo *MockBankConnectionRepository, client *MockBankClient) {
+				connection := &models.BankConnection{
+					ID:           1,
+					UserID:       1,
+					BankProvider: models.VBankProvider,
+					Status:       models.ConnectionExpired,
+				}
+				repo.On("FindByUserAndBank", ctx, 1, models.VBankProvider).Return(connection, nil)
+			},
+			expectedError: true,
+		},
+		{
+			name: "token expired - refresh success",
+			request: &GetBalancesRequest{
+				UserID:       1,
+				BankProvider: models.VBankProvider,
+				AccountID:    "acc-123",
+			},
+			mockSetup: func(repo *MockBankConnectionRepository, client *MockBankClient) {
+				oldToken := "expired-token"
+				consentID := "consent-123"
+				expiredTime := time.Now().Add(-1 * time.Hour)
+
+				connection := &models.BankConnection{
+					ID:             1,
+					UserID:         1,
+					BankProvider:   models.VBankProvider,
+					BankClientID:   "team069-1",
+					AccessToken:    &oldToken,
+					ConsentID:      &consentID,
+					TokenExpiresAt: &expiredTime,
+					Status:         models.ConnectionActive,
+				}
+
+				repo.On("FindByUserAndBank", ctx, 1, models.VBankProvider).Return(connection, nil)
+
+				// Mock token refresh
+				newToken := "new-token"
+				client.On("GetBankToken", ctx).Return(newToken, int64(3600), nil)
+				repo.On("UpdateToken", ctx, 1, newToken, mock.AnythingOfType("time.Time")).Return(nil)
+
+				// Mock GetBalances with new token
+				balances := []*models.Balance{
+					{AccountID: "acc-123", Amount: 5000.00, Currency: "RUB", Type: "InterimAvailable"},
+				}
+				client.On("GetBalances", ctx, newToken, "team069-1", consentID, "acc-123").Return(balances, nil)
+			},
+			expectedError: false,
+			validate: func(t *testing.T, balances []*models.Balance) {
+				assert.Len(t, balances, 1)
+				assert.Equal(t, 5000.00, balances[0].Amount)
+			},
+		},
+		{
+			name: "unsupported bank provider",
+			request: &GetBalancesRequest{
+				UserID:       1,
+				BankProvider: models.SBankProvider,
+				AccountID:    "acc-123",
+			},
+			mockSetup: func(repo *MockBankConnectionRepository, client *MockBankClient) {
+				token := "valid-token"
+				consentID := "consent-123"
+				expiresAt := time.Now().Add(1 * time.Hour)
+
+				connection := &models.BankConnection{
+					ID:             1,
+					UserID:         1,
+					BankProvider:   models.SBankProvider,
+					BankClientID:   "sbank-client",
+					AccessToken:    &token,
+					ConsentID:      &consentID,
+					TokenExpiresAt: &expiresAt,
+					Status:         models.ConnectionActive,
+				}
+
+				repo.On("FindByUserAndBank", ctx, 1, models.SBankProvider).Return(connection, nil)
+			},
+			expectedError: true,
+		},
+		{
+			name: "bank API error",
+			request: &GetBalancesRequest{
+				UserID:       1,
+				BankProvider: models.VBankProvider,
+				AccountID:    "acc-123",
+			},
+			mockSetup: func(repo *MockBankConnectionRepository, client *MockBankClient) {
+				token := "valid-token"
+				consentID := "consent-123"
+				expiresAt := time.Now().Add(1 * time.Hour)
+
+				connection := &models.BankConnection{
+					ID:             1,
+					UserID:         1,
+					BankProvider:   models.VBankProvider,
+					BankClientID:   "team069-1",
+					AccessToken:    &token,
+					ConsentID:      &consentID,
+					TokenExpiresAt: &expiresAt,
+					Status:         models.ConnectionActive,
+				}
+
+				repo.On("FindByUserAndBank", ctx, 1, models.VBankProvider).Return(connection, nil)
+				client.On("GetBalances", ctx, token, "team069-1", consentID, "acc-123").
+					Return(nil, fmt.Errorf("bank API unavailable"))
+			},
+			expectedError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockRepo := new(MockBankConnectionRepository)
+			mockClient := new(MockBankClient)
+
+			tt.mockSetup(mockRepo, mockClient)
+
+			service := NewService(mockRepo, map[models.BankProvider]clients.BankClient{
+				models.VBankProvider: mockClient,
+			}, log)
+
+			balances, err := service.GetBalances(ctx, tt.request)
+
+			if tt.expectedError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				if tt.validate != nil {
+					tt.validate(t, balances)
+				}
+			}
+
+			mockRepo.AssertExpectations(t)
+			mockClient.AssertExpectations(t)
+		})
+	}
 }

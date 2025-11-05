@@ -237,6 +237,186 @@ func (c *Client) GetAccounts(ctx context.Context, bankToken, bankClientID, conse
 	return accounts, nil
 }
 
+// GetBalances получает балансы конкретного счета
+// GET /accounts/{accountId}/balances?client_id=team200-1
+func (c *Client) GetBalances(ctx context.Context, bankToken, bankClientID, consentID, accountID string) ([]*models.Balance, error) {
+	const op = "vbank.Client.GetBalances"
+
+	url := fmt.Sprintf("%s/accounts/%s/balances?client_id=%s", c.baseURL, accountID, bankClientID)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("%s: create request: %w", op, err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+bankToken)
+	req.Header.Set("X-Requesting-Bank", c.clientID)
+	req.Header.Set("X-Consent-Id", consentID)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("%s: send request: %w", op, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		c.log.Error().
+			Str("op", op).
+			Int("status", resp.StatusCode).
+			Str("body", string(body)).
+			Str("account_id", accountID).
+			Msg("failed to get balances")
+		return nil, fmt.Errorf("%s: status %d", op, resp.StatusCode)
+	}
+
+	var balancesResp struct {
+		Data struct {
+			Balance []struct {
+				AccountID      string `json:"AccountId"`
+				CreditDebitInd string `json:"CreditDebitIndicator"`
+				Type           string `json:"Type"`
+				DateTime       string `json:"DateTime"`
+				Amount         struct {
+					Amount   string `json:"Amount"`
+					Currency string `json:"Currency"`
+				} `json:"Amount"`
+				CreditLine []struct {
+					Included bool `json:"Included"`
+					Amount   struct {
+						Amount   string `json:"Amount"`
+						Currency string `json:"Currency"`
+					} `json:"Amount"`
+				} `json:"CreditLine,omitempty"`
+			} `json:"Balance"`
+		} `json:"Data"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&balancesResp); err != nil {
+		return nil, fmt.Errorf("%s: decode response: %w", op, err)
+	}
+
+	balances := make([]*models.Balance, 0, len(balancesResp.Data.Balance))
+	for _, bal := range balancesResp.Data.Balance {
+		// Parse amount string to float64
+		var amount float64
+		if _, err := fmt.Sscanf(bal.Amount.Amount, "%f", &amount); err != nil {
+			c.log.Warn().
+				Str("op", op).
+				Str("amount", bal.Amount.Amount).
+				Msg("failed to parse amount, skipping balance")
+			continue
+		}
+
+		balance := &models.Balance{
+			AccountID: bal.AccountID,
+			Amount:    amount,
+			Currency:  bal.Amount.Currency,
+			Type:      bal.Type,
+		}
+
+		balances = append(balances, balance)
+	}
+
+	c.log.Debug().
+		Str("op", op).
+		Str("account_id", accountID).
+		Int("count", len(balances)).
+		Msg("fetched balances")
+
+	return balances, nil
+}
+
+// GetTransactions получает список транзакций конкретного счета
+// GET /accounts/{accountId}/transactions?client_id=team200-1
+func (c *Client) GetTransactions(ctx context.Context, bankToken, bankClientID, consentID, accountID string) ([]*models.Transaction, error) {
+	const op = "vbank.Client.GetTransactions"
+
+	url := fmt.Sprintf("%s/accounts/%s/transactions?client_id=%s", c.baseURL, accountID, bankClientID)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("%s: create request: %w", op, err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+bankToken)
+	req.Header.Set("X-Requesting-Bank", c.clientID)
+	req.Header.Set("X-Consent-Id", consentID)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("%s: send request: %w", op, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		c.log.Error().
+			Str("op", op).
+			Int("status", resp.StatusCode).
+			Str("body", string(body)).
+			Str("account_id", accountID).
+			Msg("failed to get transactions")
+		return nil, fmt.Errorf("%s: status %d", op, resp.StatusCode)
+	}
+
+	var transactionsResp struct {
+		Data struct {
+			Transaction []struct {
+				AccountID            string `json:"AccountId"`
+				TransactionID        string `json:"TransactionId"`
+				CreditDebitIndicator string `json:"CreditDebitIndicator"`
+				Status               string `json:"Status"`
+				BookingDateTime      string `json:"BookingDateTime"`
+				Amount               struct {
+					Amount   string `json:"Amount"`
+					Currency string `json:"Currency"`
+				} `json:"Amount"`
+				TransactionInformation string `json:"TransactionInformation,omitempty"`
+			} `json:"Transaction"`
+		} `json:"Data"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&transactionsResp); err != nil {
+		return nil, fmt.Errorf("%s: decode response: %w", op, err)
+	}
+
+	transactions := make([]*models.Transaction, 0, len(transactionsResp.Data.Transaction))
+	for _, tx := range transactionsResp.Data.Transaction {
+		// Parse amount string to float64
+		var amount float64
+		if _, err := fmt.Sscanf(tx.Amount.Amount, "%f", &amount); err != nil {
+			c.log.Warn().
+				Str("op", op).
+				Str("amount", tx.Amount.Amount).
+				Str("transaction_id", tx.TransactionID).
+				Msg("failed to parse amount, skipping transaction")
+			continue
+		}
+
+		transaction := &models.Transaction{
+			TransactionID:          tx.TransactionID,
+			AccountID:              tx.AccountID,
+			Amount:                 amount,
+			Currency:               tx.Amount.Currency,
+			CreditDebitIndicator:   tx.CreditDebitIndicator,
+			Status:                 tx.Status,
+			BookingDateTime:        tx.BookingDateTime,
+			TransactionInformation: tx.TransactionInformation,
+		}
+
+		transactions = append(transactions, transaction)
+	}
+
+	c.log.Debug().
+		Str("op", op).
+		Str("account_id", accountID).
+		Int("count", len(transactions)).
+		Msg("fetched transactions")
+
+	return transactions, nil
+}
+
 func (c *Client) GetBankProvider() models.BankProvider {
 	return models.VBankProvider
 }
